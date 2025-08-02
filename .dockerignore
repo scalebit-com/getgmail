@@ -1,0 +1,26 @@
+# Secrets and sensitive files
+credentials.json
+token.json
+.env
+
+# Output directories
+output/
+target/
+
+# Git
+.git/
+.gitignore
+
+# Development files
+*.log
+*.tmp
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test files
+*_test.go

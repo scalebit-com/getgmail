@@ -20,6 +20,32 @@ tasks:
       - mkdir -p output
       - ./target/getgmail download -d output -m INBOX -c 10
     
+  docker-build:
+    desc: Build Docker image with version tags
+    cmds:
+      - |
+        VERSION=$(cat version.txt)
+        docker build -t perarneng/getgmail:latest -t perarneng/getgmail:${VERSION} .
+        
+  docker-push:
+    desc: Push Docker image to registry
+    deps: [docker-build]
+    cmds:
+      - |
+        VERSION=$(cat version.txt)
+        docker push perarneng/getgmail:latest
+        docker push perarneng/getgmail:${VERSION}
+        
+  docker-run:
+    desc: Run Docker container with mounted directory and environment variables
+    deps: [docker-build]
+    cmds:
+      - |
+        docker run -it -v $(pwd):/app/data \
+          -e GOOGLE_CREDENTIALS_FILE=/app/data/credentials.json \
+          -e GOOGLE_TOKEN_FILE=/app/data/token.json \
+          perarneng/getgmail:latest download -d /app/data/output -m INBOX -c 10
+        
   default:
     desc: Default task - build the project
     cmds:

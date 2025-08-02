@@ -266,21 +266,34 @@ func (c *Client) wrapPlainTextAsHTML(plainText string) string {
 }
 
 func (c *Client) extractAttachments(ctx context.Context, messageID string, payload *gmail.MessagePart) []interfaces.Attachment {
-	var attachments []interfaces.Attachment
+	attachmentMap := make(map[string]interfaces.Attachment)
+	c.extractAttachmentsRecursive(ctx, messageID, payload, attachmentMap)
 	
+	// Convert map to slice
+	var attachments []interfaces.Attachment
+	for _, attachment := range attachmentMap {
+		attachments = append(attachments, attachment)
+	}
+	
+	return attachments
+}
+
+func (c *Client) extractAttachmentsRecursive(ctx context.Context, messageID string, payload *gmail.MessagePart, attachmentMap map[string]interfaces.Attachment) {
 	// Check the payload itself for attachments
 	if c.isAttachment(payload) {
 		if attachment := c.processAttachment(ctx, messageID, payload); attachment != nil {
-			attachments = append(attachments, *attachment)
+			// Use attachment ID as key to prevent duplicates
+			attachmentID := payload.Body.AttachmentId
+			if attachmentID != "" {
+				attachmentMap[attachmentID] = *attachment
+			}
 		}
 	}
 	
 	// Recursively check parts for attachments
 	for _, part := range payload.Parts {
-		attachments = append(attachments, c.extractAttachments(ctx, messageID, part)...)
+		c.extractAttachmentsRecursive(ctx, messageID, part, attachmentMap)
 	}
-	
-	return attachments
 }
 
 func (c *Client) isAttachment(part *gmail.MessagePart) bool {

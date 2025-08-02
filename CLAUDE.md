@@ -13,6 +13,12 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
 - **Run**: `task run` - Builds and runs with test parameters (downloads 10 emails)
 - **Manual run**: `./target/getgmail download -d output -m INBOX -c 100`
 
+### Docker Commands
+- **Docker Build**: `task docker-build` - Builds Docker image with both latest and version tags
+- **Docker Push**: `task docker-push` - Pushes image to Docker Hub registry 
+- **Docker Run**: `task docker-run` - Runs container with mounted directory and environment variables
+- **Manual Docker**: `docker run -v $(pwd):/app/data -e GOOGLE_CREDENTIALS_FILE=/app/data/credentials.json -e GOOGLE_TOKEN_FILE=/app/data/token.json perarneng/getgmail:latest download -d /app/data/output -m INBOX -c 100`
+
 ## Environment Setup
 
 ### Gmail API Setup
@@ -90,10 +96,11 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
 
 ### Attachment Implementation
 
-The application automatically detects and downloads email attachments:
-- **Detection**: Identifies attachments by checking Content-Disposition headers and attachment IDs (`pkg/gmail/client.go:230-242`)
-- **Processing**: Downloads attachment data using Gmail API attachment endpoints (`pkg/gmail/client.go:245-276`)
-- **Filename Extraction**: Parses filenames from Content-Disposition headers (`pkg/gmail/client.go:279-297`)
+The application automatically detects and downloads email attachments with deduplication:
+- **Detection**: Identifies attachments by checking Content-Disposition headers and attachment IDs (`pkg/gmail/client.go:286-298`)
+- **Deduplication**: Uses attachment ID mapping to prevent duplicate downloads (`pkg/gmail/client.go:268-297`) 
+- **Processing**: Downloads attachment data using Gmail API attachment endpoints (`pkg/gmail/client.go:301-330`)
+- **Filename Extraction**: Parses filenames from Content-Disposition headers (`pkg/gmail/client.go:333-351`)
 - **Storage**: Saves attachments directly in email directory with prefixed filenames (`pkg/output/writer.go`)
 - **Naming**: Uses consistent prefix format: `{date-time-subject}_{attachment_filename}`
 - **Metadata**: Includes attachment count and details in email metadata
@@ -115,3 +122,15 @@ The application implements a complete OAuth2 flow:
 - Automatically saves tokens for future use (`pkg/gmail/client.go:100-108`)
 - Supports token refresh through the oauth2 library
 - Uses Gmail readonly scope which includes attachment access permissions
+
+### Docker Implementation
+
+The project includes Docker containerization with multi-stage build optimization:
+- **Dockerfile**: Multi-stage build using Go 1.24-alpine base with final Alpine runtime (`Dockerfile`)
+- **Image Size**: Optimized to 51.4MB using minimal Alpine Linux base
+- **Security**: Runs as non-root user (appuser:1000) with minimal privileges
+- **Environment**: Supports environment variables for credential file paths
+- **Volume Mounting**: Allows mounting host directories for credential and output file access
+- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.0.0`
+- **Exclusions**: `.dockerignore` prevents secrets (credentials.json, token.json, .env) from being included in image
+- **Tasks**: Automated build and push via Taskfile.yml with version tagging from `version.txt`
