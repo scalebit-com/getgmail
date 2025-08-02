@@ -14,14 +14,15 @@ type Attachment struct {
 }
 
 type EmailMessage struct {
-	ID          string
-	Subject     string
-	Date        string
-	From        string
-	To          string
-	Body        string
-	Headers     map[string]string
-	Attachments []Attachment
+	ID           string
+	Subject      string
+	Date         string
+	From         string
+	To           string
+	Body         string
+	BodyMimeType string
+	Headers      map[string]string
+	Attachments  []Attachment
 }
 
 type GmailClient interface {

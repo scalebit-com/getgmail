@@ -178,7 +178,7 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*interfaces.
 	}
 
 	// Extract body
-	email.Body = c.extractBody(msg.Payload)
+	email.Body, email.BodyMimeType = c.extractBody(msg.Payload)
 
 	// Extract attachments
 	email.Attachments = c.extractAttachments(ctx, msg.Id, msg.Payload)
@@ -186,11 +186,11 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*interfaces.
 	return email, nil
 }
 
-func (c *Client) extractBody(payload *gmail.MessagePart) string {
+func (c *Client) extractBody(payload *gmail.MessagePart) (string, string) {
 	if payload.Body != nil && payload.Body.Data != "" {
 		data, err := base64.URLEncoding.DecodeString(payload.Body.Data)
 		if err == nil {
-			return string(data)
+			return string(data), payload.MimeType
 		}
 	}
 
@@ -200,13 +200,13 @@ func (c *Client) extractBody(payload *gmail.MessagePart) string {
 			if part.Body != nil && part.Body.Data != "" {
 				data, err := base64.URLEncoding.DecodeString(part.Body.Data)
 				if err == nil {
-					return string(data)
+					return string(data), part.MimeType
 				}
 			}
 		}
 	}
 
-	return ""
+	return "", "text/plain"
 }
 
 func (c *Client) extractAttachments(ctx context.Context, messageID string, payload *gmail.MessagePart) []interfaces.Attachment {

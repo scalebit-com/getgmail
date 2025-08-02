@@ -46,13 +46,13 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
   - `GmailClient` - Gmail API operations
   - `Logger` - Structured logging interface  
   - `OutputWriter` - File system operations
-  - `EmailMessage` - Email data structure with attachment support
+  - `EmailMessage` - Email data structure with attachment support and body MIME type detection
   - `Attachment` - Attachment data structure with filename, MIME type, size, and binary data
 
 - **pkg/gmail/**: Gmail API client implementation
   - Handles OAuth2 authentication and token management
   - Paginates through message lists with count limiting
-  - Extracts email headers, body content from multipart messages
+  - Extracts email headers, body content from multipart messages with MIME type detection
   - Downloads and processes email attachments automatically
   - Downloads latest emails first (Gmail API default order)
 
@@ -60,7 +60,7 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
   - Creates organized folder structure: `YYYY-MM-DD_HH-MM-SS_subject`
   - Sets folder modification times to match email dates (timezone-aware)
   - Sanitizes filenames and handles duplicate emails
-  - Writes `metadata.txt` and `body.txt` files per email
+  - Writes `metadata.txt` and body files with appropriate extensions (`body.html` for HTML, `body.txt` for plain text)
   - Creates `attachments/` subdirectory and saves all email attachments
   - Preserves original attachment filenames with proper extensions
   - Handles duplicate attachment filenames with numbered suffixes
@@ -94,6 +94,17 @@ The application automatically detects and downloads email attachments:
 - **Filename Extraction**: Parses filenames from Content-Disposition headers (`pkg/gmail/client.go:279-297`)
 - **Storage**: Saves attachments in `attachments/` subdirectory with sanitized filenames (`pkg/output/writer.go:117-162`)
 - **Metadata**: Includes attachment count and details in email metadata (`pkg/output/writer.go:107-113`)
+
+### MIME Type Detection and Body Handling
+
+The application automatically detects email body MIME types and saves files with appropriate extensions:
+- **MIME Type Extraction**: Extracts MIME type from Gmail API message parts (`pkg/gmail/client.go:189-210`)
+- **File Extension Logic**: Determines file extension based on content type (`pkg/output/writer.go:122-129`)
+  - `text/html` → `body.html`
+  - `text/plain` → `body.txt`
+  - Unknown types → `body.txt` (default)
+- **Enhanced Metadata**: Includes body MIME type in `metadata.txt` (`pkg/output/writer.go:97`)
+- **Structure Update**: `EmailMessage` struct includes `BodyMimeType` field (`pkg/interfaces/gmail.go:23`)
 
 ### OAuth2 Implementation
 

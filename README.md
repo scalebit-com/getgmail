@@ -53,6 +53,7 @@ A command-line interface (CLI) tool written in Go that downloads Gmail emails to
 - **Robust Date Parsing**: Handles various email date formats and timezone suffixes
 - **Clean Output**: Sanitizes filenames and handles long subjects
 - **Attachment Support**: Automatically downloads and saves email attachments
+- **MIME Type Detection**: HTML emails saved as `.html`, plain text as `.txt` based on content type
 
 ## Output Structure
 
@@ -61,16 +62,23 @@ Each email is saved in its own folder:
 output/
 ├── 2025-08-01_04-39-03_Receipt-for-Your-Payment/
 │   ├── metadata.txt           # Email headers and metadata
-│   ├── body.txt               # Email body content
+│   ├── body.html              # Email body (HTML content)
 │   └── attachments/           # Email attachments (if any)
 │       ├── invoice.pdf
 │       └── receipt.jpg
 └── 2025-08-01_05-19-14_Important-Document/
     ├── metadata.txt
-    ├── body.txt
+    ├── body.txt               # Email body (plain text content)
     └── attachments/
         └── document.docx
 ```
+
+### Email Body Content
+
+- **Smart File Extensions**: Email body files are saved with appropriate extensions based on MIME type
+  - HTML emails (`text/html`) → `body.html`
+  - Plain text emails (`text/plain`) → `body.txt`
+- **MIME Type Metadata**: The body's MIME type is included in `metadata.txt` for reference
 
 ### Attachment Handling
 

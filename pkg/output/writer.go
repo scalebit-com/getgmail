@@ -94,10 +94,11 @@ Subject: %s
 From: %s
 To: %s
 Date: %s
+Body MIME Type: %s
 Attachments: %d
 
 Headers:
-`, email.ID, email.Subject, email.From, email.To, email.Date, len(email.Attachments))
+`, email.ID, email.Subject, email.From, email.To, email.Date, email.BodyMimeType, len(email.Attachments))
 
 	for key, value := range email.Headers {
 		metadataContent += fmt.Sprintf("%s: %s\n", key, value)
@@ -117,8 +118,18 @@ Headers:
 		return fmt.Errorf("failed to write metadata: %v", err)
 	}
 
-	// Write email body
-	bodyPath := filepath.Join(folderPath, "body.txt")
+	// Write email body with appropriate extension based on MIME type
+	var bodyFilename string
+	switch email.BodyMimeType {
+	case "text/html":
+		bodyFilename = "body.html"
+	case "text/plain":
+		bodyFilename = "body.txt"
+	default:
+		bodyFilename = "body.txt"
+	}
+	
+	bodyPath := filepath.Join(folderPath, bodyFilename)
 	err = os.WriteFile(bodyPath, []byte(email.Body), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write email body: %v", err)
