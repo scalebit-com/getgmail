@@ -1,0 +1,13 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build the getgmail binary
+    cmds:
+      - mkdir -p target
+      - go build -o target/getgmail .
+    
+  default:
+    desc: Default task - build the project
+    cmds:
+      - task: build
