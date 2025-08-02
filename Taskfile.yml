@@ -7,6 +7,19 @@ tasks:
       - mkdir -p target
       - go build -o target/getgmail .
     
+  clean:
+    desc: Clean build artifacts and output
+    cmds:
+      - rm -rf target/*
+      - rm -rf output/*
+  
+  run:
+    desc: Run getgmail with test parameters (count=10)
+    deps: [build]
+    cmds:
+      - mkdir -p output
+      - ./target/getgmail download -d output -m INBOX -c 10
+    
   default:
     desc: Default task - build the project
     cmds:

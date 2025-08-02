@@ -3,7 +3,9 @@ package gmail
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -49,7 +51,12 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	tok, err := c.tokenFromFile(tokenFile)
 	if err != nil {
-		return fmt.Errorf("unable to retrieve token from file: %v", err)
+		// If token doesn't exist, start OAuth2 flow
+		tok, err = c.getTokenFromWeb(config)
+		if err != nil {
+			return fmt.Errorf("unable to get token from web: %v", err)
+		}
+		c.saveToken(tokenFile, tok)
 	}
 
 	client := config.Client(ctx, tok)
@@ -69,23 +76,58 @@ func (c *Client) tokenFromFile(file string) (*oauth2.Token, error) {
 	}
 	defer f.Close()
 	
-	// This is a simplified token loading - in practice you'd want proper JSON unmarshaling
-	return nil, fmt.Errorf("token file parsing not implemented - please implement OAuth2 flow")
+	tok := &oauth2.Token{}
+	err = json.NewDecoder(f).Decode(tok)
+	return tok, err
 }
 
-func (c *Client) ListMessages(ctx context.Context, mailbox string) ([]*gmail.Message, error) {
+func (c *Client) getTokenFromWeb(config *oauth2.Config) (*oauth2.Token, error) {
+	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
+	fmt.Printf("Go to the following link in your browser then type the authorization code: \n%v\n", authURL)
+
+	var authCode string
+	if _, err := fmt.Scan(&authCode); err != nil {
+		return nil, fmt.Errorf("unable to read authorization code: %v", err)
+	}
+
+	tok, err := config.Exchange(context.TODO(), authCode)
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve token from web: %v", err)
+	}
+	return tok, nil
+}
+
+func (c *Client) saveToken(path string, token *oauth2.Token) {
+	fmt.Printf("Saving credential file to: %s\n", path)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		log.Fatalf("Unable to cache oauth token: %v", err)
+	}
+	defer f.Close()
+	json.NewEncoder(f).Encode(token)
+}
+
+func (c *Client) ListMessages(ctx context.Context, mailbox string, maxResults int64) ([]*gmail.Message, error) {
 	if c.service == nil {
 		return nil, fmt.Errorf("gmail service not connected")
 	}
 
 	var messages []*gmail.Message
 	pageToken := ""
+	remaining := maxResults
 
-	for {
+	for remaining > 0 {
 		call := c.service.Users.Messages.List(c.userID).LabelIds(mailbox)
 		if pageToken != "" {
 			call = call.PageToken(pageToken)
 		}
+		
+		// Set page size to remaining count or max page size (500)
+		pageSize := remaining
+		if pageSize > 500 {
+			pageSize = 500
+		}
+		call = call.MaxResults(pageSize)
 
 		resp, err := call.Context(ctx).Do()
 		if err != nil {
@@ -93,8 +135,9 @@ func (c *Client) ListMessages(ctx context.Context, mailbox string) ([]*gmail.Mes
 		}
 
 		messages = append(messages, resp.Messages...)
+		remaining -= int64(len(resp.Messages))
 
-		if resp.NextPageToken == "" {
+		if resp.NextPageToken == "" || remaining <= 0 {
 			break
 		}
 		pageToken = resp.NextPageToken

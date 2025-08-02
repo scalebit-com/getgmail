@@ -43,7 +43,9 @@ func (w *FileWriter) ValidateOutputDir(outputDir string) error {
 
 func (w *FileWriter) CreateEmailFolder(email *interfaces.EmailMessage, outputDir string) (string, error) {
 	// Parse date
+	w.logger.Debug(fmt.Sprintf("Raw email date: '%s'", email.Date))
 	date := w.parseEmailDate(email.Date)
+	w.logger.Debug(fmt.Sprintf("Parsed email date: %s", date.Format(time.RFC3339)))
 	dateStr := date.Format("2006-01-02_15-04-05")
 
 	// Clean subject for filesystem
@@ -61,18 +63,21 @@ func (w *FileWriter) CreateEmailFolder(email *interfaces.EmailMessage, outputDir
 	folderPath := filepath.Join(outputDir, folderName)
 
 	// Check if folder already exists
+	folderExists := false
 	if _, err := os.Stat(folderPath); err == nil {
 		w.logger.Info(fmt.Sprintf("Email folder already exists: %s", folderName))
-		return folderPath, nil
+		folderExists = true
 	}
 
-	// Create folder
-	err := os.MkdirAll(folderPath, 0755)
-	if err != nil {
-		return "", fmt.Errorf("failed to create email folder: %v", err)
+	// Create folder if it doesn't exist
+	if !folderExists {
+		err := os.MkdirAll(folderPath, 0755)
+		if err != nil {
+			return "", fmt.Errorf("failed to create email folder: %v", err)
+		}
+		w.logger.Info(fmt.Sprintf("Created email folder: %s", folderName))
 	}
 
-	w.logger.Info(fmt.Sprintf("Created email folder: %s", folderName))
 	return folderPath, nil
 }
 
@@ -109,23 +114,38 @@ Headers:
 		return fmt.Errorf("failed to write email body: %v", err)
 	}
 
+	// Set folder modification time to email date AFTER writing all files
+	date := w.parseEmailDate(email.Date)
+	w.logger.Debug(fmt.Sprintf("Setting folder timestamp to: %s", date.Format(time.RFC3339)))
+	err = os.Chtimes(folderPath, date, date)
+	if err != nil {
+		w.logger.Warn(fmt.Sprintf("Failed to set folder timestamp: %v", err))
+	} else {
+		w.logger.Debug(fmt.Sprintf("Successfully set folder timestamp"))
+	}
+
 	w.logger.Info(fmt.Sprintf("Wrote email %s to %s", email.ID, folderPath))
 	return nil
 }
 
 func (w *FileWriter) parseEmailDate(dateStr string) time.Time {
+	// Clean up date string - remove timezone suffixes like (UTC), (GMT), etc.
+	cleanDateStr := regexp.MustCompile(`\s*\([^)]+\)\s*$`).ReplaceAllString(dateStr, "")
+	
 	// Try common email date formats
 	formats := []string{
 		"Mon, 2 Jan 2006 15:04:05 -0700",
+		"Mon, 02 Jan 2006 15:04:05 -0700",
 		"2 Jan 2006 15:04:05 -0700",
+		"02 Jan 2006 15:04:05 -0700",
 		"Mon, 2 Jan 2006 15:04:05 MST",
+		time.RFC1123Z,  // "Mon, 02 Jan 2006 15:04:05 -0700"
+		time.RFC1123,   // "Mon, 02 Jan 2006 15:04:05 MST"
 		time.RFC3339,
-		time.RFC1123Z,
-		time.RFC1123,
 	}
 
 	for _, format := range formats {
-		if t, err := time.Parse(format, dateStr); err == nil {
+		if t, err := time.Parse(format, cleanDateStr); err == nil {
 			return t
 		}
 	}

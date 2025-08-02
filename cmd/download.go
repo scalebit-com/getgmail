@@ -16,6 +16,7 @@ import (
 var (
 	mailbox   string
 	outputDir string
+	count     int
 )
 
 var downloadCmd = &cobra.Command{
@@ -28,6 +29,7 @@ var downloadCmd = &cobra.Command{
 func init() {
 	downloadCmd.Flags().StringVarP(&mailbox, "mailbox", "m", "INBOX", "Gmail mailbox/label to download from")
 	downloadCmd.Flags().StringVarP(&outputDir, "output-dir", "d", "", "Output directory for downloaded emails (required)")
+	downloadCmd.Flags().IntVarP(&count, "count", "c", 100, "Maximum number of emails to download")
 	downloadCmd.MarkFlagRequired("output-dir")
 	
 	rootCmd.AddCommand(downloadCmd)
@@ -58,11 +60,11 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	log.Info(fmt.Sprintf("Connected successfully, downloading from mailbox: %s", mailbox))
+	log.Info(fmt.Sprintf("Connected successfully, downloading from mailbox: %s (max %d emails)", mailbox, count))
 
 	// List messages
-	log.Info("Fetching message list...")
-	messages, err := gmailClient.ListMessages(ctx, mailbox)
+	log.Info(fmt.Sprintf("Fetching message list (max %d messages)...", count))
+	messages, err := gmailClient.ListMessages(ctx, mailbox, int64(count))
 	if err != nil {
 		log.Error(fmt.Sprintf("Failed to list messages: %v", err))
 		return err

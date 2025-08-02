@@ -16,7 +16,7 @@ type EmailMessage struct {
 }
 
 type GmailClient interface {
-	ListMessages(ctx context.Context, mailbox string) ([]*gmail.Message, error)
+	ListMessages(ctx context.Context, mailbox string, maxResults int64) ([]*gmail.Message, error)
 	GetMessage(ctx context.Context, messageID string) (*EmailMessage, error)
 	Connect(ctx context.Context) error
 }

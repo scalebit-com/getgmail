@@ -1,30 +1,83 @@
 # getgmail
 
-A command-line interface (CLI) tool written in Go that makes it possible to download Gmail emails to a local folder.
+A command-line interface (CLI) tool written in Go that downloads Gmail emails to organized local folders. Each email is saved in its own directory with metadata and body content, and folder timestamps match the email dates.
 
-## Building
+## Quick Start
 
-To build the project, use the provided Task runner:
+1. **Build the project:**
+   ```bash
+   task
+   ```
+
+2. **Set up Gmail API credentials:**
+   - Follow the [Gmail Go Quickstart](https://developers.google.com/gmail/api/quickstart/go)
+   - Download `credentials.json` to the project root
+   - Set `GOOGLE_CREDENTIALS_FILE=credentials.json` in `.env` file
+
+3. **Download emails:**
+   ```bash
+   # Download 10 emails (test run)
+   task run
+   
+   # Download 100 emails (default)
+   ./target/getgmail download -d output -m INBOX
+   
+   # Download specific number of emails
+   ./target/getgmail download -d output -m INBOX -c 50
+   ```
+
+## Commands
+
+- `task` - Build the project
+- `task clean` - Clean build artifacts and output
+- `task run` - Build and run with test parameters (10 emails)
+
+## Command Line Options
 
 ```bash
-task
+./target/getgmail download [flags]
 ```
 
-This will create the `getgmail` binary in the `target/` directory.
+### Flags
+- `-d, --output-dir` - Output directory for downloaded emails (required)
+- `-m, --mailbox` - Gmail mailbox/label to download from (default: "INBOX")
+- `-c, --count` - Maximum number of emails to download (default: 100)
 
-## Running
+## Features
 
-After building, you can run the application:
+- **OAuth2 Authentication**: Secure Gmail API access with automatic token management
+- **Efficient Download**: Downloads latest emails first with configurable count limits
+- **Organized Storage**: Creates folders named `YYYY-MM-DD_HH-MM-SS_subject` 
+- **Timezone Aware**: Folder modification times match email dates in your local timezone
+- **Smart Deduplication**: Skips already downloaded emails
+- **Robust Date Parsing**: Handles various email date formats and timezone suffixes
+- **Clean Output**: Sanitizes filenames and handles long subjects
 
-```bash
-./target/getgmail
+## Output Structure
+
+Each email is saved in its own folder:
+```
+output/
+├── 2025-08-01_04-39-03_Receipt-for-Your-Payment/
+│   ├── metadata.txt    # Email headers and metadata
+│   └── body.txt        # Email body content
+└── 2025-08-01_05-19-14_Important-Document/
+    ├── metadata.txt
+    └── body.txt
 ```
 
 ## Requirements
 
 - Go 1.24.5 or later
 - Task runner (go-task)
+- Gmail API credentials
 
-## Development
+## Environment Setup
 
-The project uses Task for build automation. The default task builds the project and creates the binary in the `target/` directory.
+Create a `.env` file in the project root:
+```
+GOOGLE_CREDENTIALS_FILE=credentials.json
+GOOGLE_TOKEN_FILE=token.json
+```
+
+On first run, the application will guide you through the OAuth2 authorization process.
