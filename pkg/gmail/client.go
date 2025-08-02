@@ -157,8 +157,9 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*interfaces.
 	}
 
 	email := &interfaces.EmailMessage{
-		ID:      msg.Id,
-		Headers: make(map[string]string),
+		ID:          msg.Id,
+		Headers:     make(map[string]string),
+		Attachments: []interfaces.Attachment{},
 	}
 
 	// Extract headers
@@ -178,6 +179,9 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*interfaces.
 
 	// Extract body
 	email.Body = c.extractBody(msg.Payload)
+
+	// Extract attachments
+	email.Attachments = c.extractAttachments(ctx, msg.Id, msg.Payload)
 
 	return email, nil
 }
@@ -202,5 +206,92 @@ func (c *Client) extractBody(payload *gmail.MessagePart) string {
 		}
 	}
 
+	return ""
+}
+
+func (c *Client) extractAttachments(ctx context.Context, messageID string, payload *gmail.MessagePart) []interfaces.Attachment {
+	var attachments []interfaces.Attachment
+	
+	// Check the payload itself for attachments
+	if c.isAttachment(payload) {
+		if attachment := c.processAttachment(ctx, messageID, payload); attachment != nil {
+			attachments = append(attachments, *attachment)
+		}
+	}
+	
+	// Recursively check parts for attachments
+	for _, part := range payload.Parts {
+		attachments = append(attachments, c.extractAttachments(ctx, messageID, part)...)
+	}
+	
+	return attachments
+}
+
+func (c *Client) isAttachment(part *gmail.MessagePart) bool {
+	// Check if this part has a filename in headers
+	for _, header := range part.Headers {
+		if strings.ToLower(header.Name) == "content-disposition" {
+			if strings.Contains(strings.ToLower(header.Value), "attachment") ||
+				strings.Contains(strings.ToLower(header.Value), "filename") {
+				return true
+			}
+		}
+	}
+	
+	// Check if it has an attachment ID and body size > 0
+	return part.Body != nil && part.Body.AttachmentId != "" && part.Body.Size > 0
+}
+
+func (c *Client) processAttachment(ctx context.Context, messageID string, part *gmail.MessagePart) *interfaces.Attachment {
+	if part.Body == nil || part.Body.AttachmentId == "" {
+		return nil
+	}
+	
+	// Get filename from headers
+	filename := c.getFilenameFromHeaders(part.Headers)
+	if filename == "" {
+		filename = fmt.Sprintf("attachment_%s", part.Body.AttachmentId)
+	}
+	
+	// Download attachment data
+	attachment, err := c.service.Users.Messages.Attachments.Get(c.userID, messageID, part.Body.AttachmentId).Context(ctx).Do()
+	if err != nil {
+		fmt.Printf("Error downloading attachment %s: %v\n", filename, err)
+		return nil
+	}
+	
+	// Decode attachment data
+	data, err := base64.URLEncoding.DecodeString(attachment.Data)
+	if err != nil {
+		fmt.Printf("Error decoding attachment %s: %v\n", filename, err)
+		return nil
+	}
+	
+	return &interfaces.Attachment{
+		Filename:     filename,
+		MimeType:     part.MimeType,
+		Size:         part.Body.Size,
+		Data:         data,
+		AttachmentID: part.Body.AttachmentId,
+	}
+}
+
+func (c *Client) getFilenameFromHeaders(headers []*gmail.MessagePartHeader) string {
+	for _, header := range headers {
+		if strings.ToLower(header.Name) == "content-disposition" {
+			// Parse filename from Content-Disposition header
+			value := header.Value
+			if idx := strings.Index(strings.ToLower(value), "filename="); idx != -1 {
+				filename := value[idx+9:]
+				// Remove quotes if present
+				filename = strings.Trim(filename, `"`)
+				// Remove any trailing parameters
+				if idx := strings.Index(filename, ";"); idx != -1 {
+					filename = filename[:idx]
+				}
+				return strings.TrimSpace(filename)
+			}
+		}
+	}
 	return ""
 }

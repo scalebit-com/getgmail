@@ -94,12 +94,22 @@ Subject: %s
 From: %s
 To: %s
 Date: %s
+Attachments: %d
 
 Headers:
-`, email.ID, email.Subject, email.From, email.To, email.Date)
+`, email.ID, email.Subject, email.From, email.To, email.Date, len(email.Attachments))
 
 	for key, value := range email.Headers {
 		metadataContent += fmt.Sprintf("%s: %s\n", key, value)
+	}
+
+	// Add attachment details to metadata
+	if len(email.Attachments) > 0 {
+		metadataContent += "\nAttachments:\n"
+		for i, attachment := range email.Attachments {
+			metadataContent += fmt.Sprintf("  %d. %s (%s, %d bytes)\n", 
+				i+1, attachment.Filename, attachment.MimeType, attachment.Size)
+		}
 	}
 
 	err = os.WriteFile(metadataPath, []byte(metadataContent), 0644)
@@ -112,6 +122,53 @@ Headers:
 	err = os.WriteFile(bodyPath, []byte(email.Body), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write email body: %v", err)
+	}
+
+	// Write attachments
+	if len(email.Attachments) > 0 {
+		attachmentsDir := filepath.Join(folderPath, "attachments")
+		err = os.MkdirAll(attachmentsDir, 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create attachments directory: %v", err)
+		}
+
+		for i, attachment := range email.Attachments {
+			filename := attachment.Filename
+			if filename == "" {
+				filename = fmt.Sprintf("attachment_%d", i+1)
+			}
+			
+			// Sanitize filename
+			filename = w.sanitizeForFilename(filename)
+			if filename == "" {
+				filename = fmt.Sprintf("attachment_%d", i+1)
+			}
+
+			attachmentPath := filepath.Join(attachmentsDir, filename)
+			
+			// Handle duplicate filenames by adding a counter
+			originalPath := attachmentPath
+			counter := 1
+			for {
+				if _, err := os.Stat(attachmentPath); os.IsNotExist(err) {
+					break
+				}
+				ext := filepath.Ext(originalPath)
+				base := strings.TrimSuffix(originalPath, ext)
+				attachmentPath = fmt.Sprintf("%s_%d%s", base, counter, ext)
+				counter++
+			}
+
+			err = os.WriteFile(attachmentPath, attachment.Data, 0644)
+			if err != nil {
+				w.logger.Warn(fmt.Sprintf("Failed to write attachment %s: %v", filename, err))
+				continue
+			}
+			
+			w.logger.Info(fmt.Sprintf("Wrote attachment: %s (%d bytes)", filename, len(attachment.Data)))
+		}
+		
+		w.logger.Info(fmt.Sprintf("Wrote %d attachments to %s", len(email.Attachments), attachmentsDir))
 	}
 
 	// Set folder modification time to email date AFTER writing all files
@@ -156,8 +213,8 @@ func (w *FileWriter) parseEmailDate(dateStr string) time.Time {
 }
 
 func (w *FileWriter) sanitizeForFilename(s string) string {
-	// Remove or replace invalid characters for filenames
-	reg := regexp.MustCompile(`[^\w\s-]`)
+	// Remove or replace invalid characters for filenames, but keep dots for extensions
+	reg := regexp.MustCompile(`[^\w\s.-]`)
 	cleaned := reg.ReplaceAllString(s, "")
 	
 	// Replace spaces and multiple dashes with single dash

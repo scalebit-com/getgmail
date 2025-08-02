@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the Gmail API. Each email is saved in its own directory with metadata and body content.
+GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the Gmail API. Each email is saved in its own directory with metadata, body content, and attachments.
 
 ## Build & Development Commands
 
@@ -46,12 +46,14 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
   - `GmailClient` - Gmail API operations
   - `Logger` - Structured logging interface  
   - `OutputWriter` - File system operations
-  - `EmailMessage` - Email data structure
+  - `EmailMessage` - Email data structure with attachment support
+  - `Attachment` - Attachment data structure with filename, MIME type, size, and binary data
 
 - **pkg/gmail/**: Gmail API client implementation
   - Handles OAuth2 authentication and token management
   - Paginates through message lists with count limiting
   - Extracts email headers, body content from multipart messages
+  - Downloads and processes email attachments automatically
   - Downloads latest emails first (Gmail API default order)
 
 - **pkg/output/**: File system operations
@@ -59,6 +61,9 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
   - Sets folder modification times to match email dates (timezone-aware)
   - Sanitizes filenames and handles duplicate emails
   - Writes `metadata.txt` and `body.txt` files per email
+  - Creates `attachments/` subdirectory and saves all email attachments
+  - Preserves original attachment filenames with proper extensions
+  - Handles duplicate attachment filenames with numbered suffixes
   - Improved date parsing with timezone suffix handling
 
 - **pkg/logger/**: Colored console logging with timestamps
@@ -76,9 +81,19 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
 1. CLI parses flags (including count limit) and loads environment variables
 2. Gmail client authenticates via OAuth2 and connects to API
 3. Lists messages from specified mailbox with efficient pagination and count limiting
-4. For each message: fetches full content, creates folder, writes metadata/body
-5. Sets folder modification time to email date after writing all files
-6. Skips already downloaded emails based on existing metadata files
+4. For each message: fetches full content, creates folder, writes metadata/body/attachments
+5. Downloads attachments using Gmail API attachment endpoints with base64 decoding
+6. Sets folder modification time to email date after writing all files
+7. Skips already downloaded emails based on existing metadata files
+
+### Attachment Implementation
+
+The application automatically detects and downloads email attachments:
+- **Detection**: Identifies attachments by checking Content-Disposition headers and attachment IDs (`pkg/gmail/client.go:230-242`)
+- **Processing**: Downloads attachment data using Gmail API attachment endpoints (`pkg/gmail/client.go:245-276`)
+- **Filename Extraction**: Parses filenames from Content-Disposition headers (`pkg/gmail/client.go:279-297`)
+- **Storage**: Saves attachments in `attachments/` subdirectory with sanitized filenames (`pkg/output/writer.go:117-162`)
+- **Metadata**: Includes attachment count and details in email metadata (`pkg/output/writer.go:107-113`)
 
 ### OAuth2 Implementation
 
@@ -87,3 +102,4 @@ The application implements a complete OAuth2 flow:
 - Initiates interactive OAuth2 flow for first-time setup (`pkg/gmail/client.go:84-97`)
 - Automatically saves tokens for future use (`pkg/gmail/client.go:100-108`)
 - Supports token refresh through the oauth2 library
+- Uses Gmail readonly scope which includes attachment access permissions

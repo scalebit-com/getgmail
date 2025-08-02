@@ -52,6 +52,7 @@ A command-line interface (CLI) tool written in Go that downloads Gmail emails to
 - **Smart Deduplication**: Skips already downloaded emails
 - **Robust Date Parsing**: Handles various email date formats and timezone suffixes
 - **Clean Output**: Sanitizes filenames and handles long subjects
+- **Attachment Support**: Automatically downloads and saves email attachments
 
 ## Output Structure
 
@@ -59,12 +60,25 @@ Each email is saved in its own folder:
 ```
 output/
 ├── 2025-08-01_04-39-03_Receipt-for-Your-Payment/
-│   ├── metadata.txt    # Email headers and metadata
-│   └── body.txt        # Email body content
+│   ├── metadata.txt           # Email headers and metadata
+│   ├── body.txt               # Email body content
+│   └── attachments/           # Email attachments (if any)
+│       ├── invoice.pdf
+│       └── receipt.jpg
 └── 2025-08-01_05-19-14_Important-Document/
     ├── metadata.txt
-    └── body.txt
+    ├── body.txt
+    └── attachments/
+        └── document.docx
 ```
+
+### Attachment Handling
+
+- Attachments are automatically detected and downloaded
+- Saved in `attachments/` subdirectory within each email folder
+- Original filenames and extensions are preserved
+- Duplicate filenames are handled with numbered suffixes
+- Attachment details included in `metadata.txt`
 
 ## Requirements
 
