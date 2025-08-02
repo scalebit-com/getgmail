@@ -187,26 +187,82 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*interfaces.
 }
 
 func (c *Client) extractBody(payload *gmail.MessagePart) (string, string) {
+	var htmlContent, plainContent string
+	var htmlMime, plainMime string
+
+	c.recursiveExtractBody(payload, &htmlContent, &plainContent, &htmlMime, &plainMime)
+
+	// Prioritize HTML content if available
+	if htmlContent != "" {
+		return htmlContent, htmlMime
+	}
+
+	// If only plain text, wrap it in HTML structure
+	if plainContent != "" {
+		wrappedHTML := c.wrapPlainTextAsHTML(plainContent)
+		return wrappedHTML, "text/html"
+	}
+
+	return "", "text/html"
+}
+
+func (c *Client) recursiveExtractBody(payload *gmail.MessagePart, htmlContent, plainContent, htmlMime, plainMime *string) {
+	// Check if current payload has body data
 	if payload.Body != nil && payload.Body.Data != "" {
 		data, err := base64.URLEncoding.DecodeString(payload.Body.Data)
 		if err == nil {
-			return string(data), payload.MimeType
-		}
-	}
-
-	// Check parts for multipart messages
-	for _, part := range payload.Parts {
-		if part.MimeType == "text/plain" || part.MimeType == "text/html" {
-			if part.Body != nil && part.Body.Data != "" {
-				data, err := base64.URLEncoding.DecodeString(part.Body.Data)
-				if err == nil {
-					return string(data), part.MimeType
-				}
+			content := string(data)
+			if payload.MimeType == "text/html" && *htmlContent == "" {
+				*htmlContent = content
+				*htmlMime = payload.MimeType
+			} else if payload.MimeType == "text/plain" && *plainContent == "" {
+				*plainContent = content
+				*plainMime = payload.MimeType
 			}
 		}
 	}
 
-	return "", "text/plain"
+	// Recursively check all parts
+	for _, part := range payload.Parts {
+		c.recursiveExtractBody(part, htmlContent, plainContent, htmlMime, plainMime)
+	}
+}
+
+func (c *Client) wrapPlainTextAsHTML(plainText string) string {
+	// Escape HTML characters in plain text
+	escaped := strings.ReplaceAll(plainText, "&", "&amp;")
+	escaped = strings.ReplaceAll(escaped, "<", "&lt;")
+	escaped = strings.ReplaceAll(escaped, ">", "&gt;")
+	escaped = strings.ReplaceAll(escaped, "\"", "&quot;")
+	escaped = strings.ReplaceAll(escaped, "'", "&#39;")
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Email Content</title>
+	<style>
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+			line-height: 1.6;
+			max-width: 800px;
+			margin: 20px;
+			padding: 20px;
+		}
+		pre {
+			white-space: pre-wrap;
+			word-wrap: break-word;
+			background-color: #f5f5f5;
+			padding: 15px;
+			border-radius: 5px;
+			border: 1px solid #ddd;
+		}
+	</style>
+</head>
+<body>
+	<pre>%s</pre>
+</body>
+</html>`, escaped)
 }
 
 func (c *Client) extractAttachments(ctx context.Context, messageID string, payload *gmail.MessagePart) []interfaces.Attachment {

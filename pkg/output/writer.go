@@ -118,16 +118,8 @@ Headers:
 		return fmt.Errorf("failed to write metadata: %v", err)
 	}
 
-	// Write email body with appropriate extension based on MIME type
-	var bodyFilename string
-	switch email.BodyMimeType {
-	case "text/html":
-		bodyFilename = "body.html"
-	case "text/plain":
-		bodyFilename = "body.txt"
-	default:
-		bodyFilename = "body.txt"
-	}
+	// Write email body - always save as HTML since we now wrap plain text in HTML
+	bodyFilename := "body.html"
 	
 	bodyPath := filepath.Join(folderPath, bodyFilename)
 	err = os.WriteFile(bodyPath, []byte(email.Body), 0644)
