@@ -41,11 +41,12 @@ func (w *FileWriter) ValidateOutputDir(outputDir string) error {
 	return nil
 }
 
-func (w *FileWriter) CreateEmailFolder(email *interfaces.EmailMessage, outputDir string) (string, error) {
+// generateFilePrefix creates a consistent prefix for all files in an email directory
+// Format: YYYY-MM-DD_HH-MM-SS_subject
+// Ensures total length doesn't exceed 255 characters for filesystem compatibility
+func (w *FileWriter) generateFilePrefix(email *interfaces.EmailMessage) string {
 	// Parse date
-	w.logger.Debug(fmt.Sprintf("Raw email date: '%s'", email.Date))
 	date := w.parseEmailDate(email.Date)
-	w.logger.Debug(fmt.Sprintf("Parsed email date: %s", date.Format(time.RFC3339)))
 	dateStr := date.Format("2006-01-02_15-04-05")
 
 	// Clean subject for filesystem
@@ -54,12 +55,19 @@ func (w *FileWriter) CreateEmailFolder(email *interfaces.EmailMessage, outputDir
 		subject = "no-subject"
 	}
 
-	// Limit subject length
-	if len(subject) > 100 {
-		subject = subject[:100]
+	// Calculate max subject length to keep total under 255 chars
+	// Account for: dateStr (19) + "_" (1) + longest suffix ("_metadata.txt" = 13) = 33
+	// Leave some buffer for attachment filenames
+	maxSubjectLen := 200 - len(dateStr) - 1 // 200 to leave room for suffixes
+	if len(subject) > maxSubjectLen {
+		subject = subject[:maxSubjectLen]
 	}
 
-	folderName := fmt.Sprintf("%s_%s", dateStr, subject)
+	return fmt.Sprintf("%s_%s", dateStr, subject)
+}
+
+func (w *FileWriter) CreateEmailFolder(email *interfaces.EmailMessage, outputDir string) (string, error) {
+	folderName := w.generateFilePrefix(email)
 	folderPath := filepath.Join(outputDir, folderName)
 
 	// Check if folder already exists
@@ -87,8 +95,11 @@ func (w *FileWriter) WriteEmail(ctx context.Context, email *interfaces.EmailMess
 		return err
 	}
 
+	// Generate consistent file prefix
+	filePrefix := w.generateFilePrefix(email)
+
 	// Write email metadata
-	metadataPath := filepath.Join(folderPath, "metadata.txt")
+	metadataPath := filepath.Join(folderPath, filePrefix+"_metadata.txt")
 	metadataContent := fmt.Sprintf(`Email ID: %s
 Subject: %s
 From: %s
@@ -119,22 +130,14 @@ Headers:
 	}
 
 	// Write email body - always save as HTML since we now wrap plain text in HTML
-	bodyFilename := "body.html"
-	
-	bodyPath := filepath.Join(folderPath, bodyFilename)
+	bodyPath := filepath.Join(folderPath, filePrefix+"_body.html")
 	err = os.WriteFile(bodyPath, []byte(email.Body), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write email body: %v", err)
 	}
 
-	// Write attachments
+	// Write attachments directly in email directory with prefix
 	if len(email.Attachments) > 0 {
-		attachmentsDir := filepath.Join(folderPath, "attachments")
-		err = os.MkdirAll(attachmentsDir, 0755)
-		if err != nil {
-			return fmt.Errorf("failed to create attachments directory: %v", err)
-		}
-
 		for i, attachment := range email.Attachments {
 			filename := attachment.Filename
 			if filename == "" {
@@ -147,7 +150,9 @@ Headers:
 				filename = fmt.Sprintf("attachment_%d", i+1)
 			}
 
-			attachmentPath := filepath.Join(attachmentsDir, filename)
+			// Create attachment path with prefix
+			attachmentFilename := fmt.Sprintf("%s_%s", filePrefix, filename)
+			attachmentPath := filepath.Join(folderPath, attachmentFilename)
 			
 			// Handle duplicate filenames by adding a counter
 			originalPath := attachmentPath
@@ -164,14 +169,14 @@ Headers:
 
 			err = os.WriteFile(attachmentPath, attachment.Data, 0644)
 			if err != nil {
-				w.logger.Warn(fmt.Sprintf("Failed to write attachment %s: %v", filename, err))
+				w.logger.Warn(fmt.Sprintf("Failed to write attachment %s: %v", attachmentFilename, err))
 				continue
 			}
 			
-			w.logger.Info(fmt.Sprintf("Wrote attachment: %s (%d bytes)", filename, len(attachment.Data)))
+			w.logger.Info(fmt.Sprintf("Wrote attachment: %s (%d bytes)", attachmentFilename, len(attachment.Data)))
 		}
 		
-		w.logger.Info(fmt.Sprintf("Wrote %d attachments to %s", len(email.Attachments), attachmentsDir))
+		w.logger.Info(fmt.Sprintf("Wrote %d attachments to %s", len(email.Attachments), folderPath))
 	}
 
 	// Set folder modification time to email date AFTER writing all files

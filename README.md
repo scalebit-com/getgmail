@@ -53,38 +53,44 @@ A command-line interface (CLI) tool written in Go that downloads Gmail emails to
 - **Robust Date Parsing**: Handles various email date formats and timezone suffixes
 - **Clean Output**: Sanitizes filenames and handles long subjects
 - **Attachment Support**: Automatically downloads and saves email attachments
-- **MIME Type Detection**: HTML emails saved as `.html`, plain text as `.txt` based on content type
+- **Consistent File Naming**: All files use prefixed naming with date-time-subject format
 
 ## Output Structure
 
-Each email is saved in its own folder:
+Each email is saved in its own folder with consistent prefixed naming:
 ```
 output/
 ├── 2025-08-01_04-39-03_Receipt-for-Your-Payment/
-│   ├── metadata.txt           # Email headers and metadata
-│   ├── body.html              # Email body (HTML content)
-│   └── attachments/           # Email attachments (if any)
-│       ├── invoice.pdf
-│       └── receipt.jpg
+│   ├── 2025-08-01_04-39-03_Receipt-for-Your-Payment_metadata.txt
+│   ├── 2025-08-01_04-39-03_Receipt-for-Your-Payment_body.html
+│   ├── 2025-08-01_04-39-03_Receipt-for-Your-Payment_invoice.pdf
+│   └── 2025-08-01_04-39-03_Receipt-for-Your-Payment_receipt.jpg
 └── 2025-08-01_05-19-14_Important-Document/
-    ├── metadata.txt
-    ├── body.txt               # Email body (plain text content)
-    └── attachments/
-        └── document.docx
+    ├── 2025-08-01_05-19-14_Important-Document_metadata.txt
+    ├── 2025-08-01_05-19-14_Important-Document_body.html
+    └── 2025-08-01_05-19-14_Important-Document_document.docx
 ```
+
+### File Naming Convention
+
+All files within an email directory use a consistent prefix format:
+- **Prefix Format**: `YYYY-MM-DD_HH-MM-SS_subject_`
+- **Metadata**: `{prefix}_metadata.txt`
+- **Body**: `{prefix}_body.html` (always HTML format)
+- **Attachments**: `{prefix}_{original_filename}`
 
 ### Email Body Content
 
-- **Smart File Extensions**: Email body files are saved with appropriate extensions based on MIME type
-  - HTML emails (`text/html`) → `body.html`
-  - Plain text emails (`text/plain`) → `body.txt`
-- **MIME Type Metadata**: The body's MIME type is included in `metadata.txt` for reference
+- **Consistent Extensions**: All email body files are saved as `.html` for uniform handling
+- **MIME Type Metadata**: The original body MIME type is preserved in `metadata.txt`
+- **HTML Wrapping**: Plain text emails are wrapped in HTML for consistent processing
 
 ### Attachment Handling
 
 - Attachments are automatically detected and downloaded
-- Saved in `attachments/` subdirectory within each email folder
-- Original filenames and extensions are preserved
+- Saved directly in the email directory (no subdirectory)
+- Prefixed with the same date-time-subject format for easy identification
+- Original filenames and extensions are preserved after the prefix
 - Duplicate filenames are handled with numbered suffixes
 - Attachment details included in `metadata.txt`
 
