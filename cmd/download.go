@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
+	"path/filepath"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -89,9 +89,11 @@ func runDownload(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Check if email was already downloaded
-		metadataFile := fmt.Sprintf("%s/metadata.txt", folderPath)
-		if _, err := os.Stat(metadataFile); err == nil {
+		// Check if email was already downloaded by looking for any metadata file
+		// Since metadata files use prefix format: {prefix}_metadata.txt
+		metadataPattern := filepath.Join(folderPath, "*_metadata.txt")
+		matches, _ := filepath.Glob(metadataPattern)
+		if len(matches) > 0 {
 			log.Info(fmt.Sprintf("Email %s already downloaded, skipping", msg.Id))
 			continue
 		}
