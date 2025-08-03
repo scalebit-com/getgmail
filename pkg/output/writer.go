@@ -66,19 +66,16 @@ func (w *FileWriter) generateFilePrefix(email *interfaces.EmailMessage) string {
 	return fmt.Sprintf("%s_%s", dateStr, subject)
 }
 
+func (w *FileWriter) GenerateFolderName(email *interfaces.EmailMessage) string {
+	return w.generateFilePrefix(email)
+}
+
 func (w *FileWriter) CreateEmailFolder(email *interfaces.EmailMessage, outputDir string) (string, error) {
-	folderName := w.generateFilePrefix(email)
+	folderName := w.GenerateFolderName(email)
 	folderPath := filepath.Join(outputDir, folderName)
 
-	// Check if folder already exists
-	folderExists := false
-	if _, err := os.Stat(folderPath); err == nil {
-		w.logger.Info(fmt.Sprintf("Email folder already exists: %s", folderName))
-		folderExists = true
-	}
-
 	// Create folder if it doesn't exist
-	if !folderExists {
+	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
 		err := os.MkdirAll(folderPath, 0755)
 		if err != nil {
 			return "", fmt.Errorf("failed to create email folder: %v", err)

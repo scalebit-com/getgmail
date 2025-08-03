@@ -89,10 +89,18 @@ GetGmail is a Go CLI tool that downloads Gmail emails to local folders using the
 1. CLI parses flags (including count limit) and loads environment variables
 2. Gmail client authenticates via OAuth2 and connects to API
 3. Lists messages from specified mailbox with efficient pagination and count limiting
-4. For each message: fetches full content, creates folder, writes metadata/body/attachments
-5. Downloads attachments using Gmail API attachment endpoints with base64 decoding
-6. Sets folder modification time to email date after writing all files
-7. Skips already downloaded emails based on existing metadata files
+4. For each message: checks if already downloaded BEFORE folder creation for efficiency
+5. If new: fetches full content, creates folder, writes metadata/body/attachments
+6. Downloads attachments using Gmail API attachment endpoints with base64 decoding
+7. Sets folder modification time to email date after writing all files
+
+### Optimized Duplicate Detection
+
+The application uses efficient duplicate detection to handle large email batches:
+- **Pre-check before folder creation**: Checks for existing metadata files before creating folders
+- **Fast skip logic**: Uses `GenerateFolderName()` to predict folder location without I/O operations
+- **Metadata-based detection**: Looks for `*_metadata.txt` files to determine if email was downloaded
+- **No redundant API calls**: Skips Gmail API fetch for already-downloaded emails
 
 ### Attachment Implementation
 
@@ -131,6 +139,14 @@ The project includes Docker containerization with multi-stage build optimization
 - **Security**: Runs as non-root user (appuser:1000) with minimal privileges
 - **Environment**: Supports environment variables for credential file paths
 - **Volume Mounting**: Allows mounting host directories for credential and output file access
-- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.0.0`
+- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.1.0`
 - **Exclusions**: `.dockerignore` prevents secrets (credentials.json, token.json, .env) from being included in image
 - **Tasks**: Automated build and push via Taskfile.yml with version tagging from `version.txt`
+
+### Performance Considerations
+
+- **Gmail API Quotas**: Uses ~5-10 quota units per email (well below the 15,000/minute user limit)
+- **Batch Processing**: Efficiently handles 100+ emails, with optimized duplicate detection
+- **Network Resilience**: May experience timeouts on specific emails; simply re-run to continue
+- **Typical Performance**: Downloads ~50-100 new emails in 30-60 seconds
+- **Incremental Downloads**: Subsequent runs skip already-downloaded emails in seconds

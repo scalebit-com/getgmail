@@ -82,15 +82,12 @@ func runDownload(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Check if email already exists
-		folderPath, err := writer.CreateEmailFolder(email, outputDir)
-		if err != nil {
-			log.Error(fmt.Sprintf("Failed to create folder for message %s: %v", msg.Id, err))
-			continue
-		}
-
-		// Check if email was already downloaded by looking for any metadata file
-		// Since metadata files use prefix format: {prefix}_metadata.txt
+		// Check if email was already downloaded by looking for existing folder with metadata
+		// Generate expected folder name without creating it first
+		folderName := writer.GenerateFolderName(email)
+		folderPath := filepath.Join(outputDir, folderName)
+		
+		// Check if metadata file exists in expected folder
 		metadataPattern := filepath.Join(folderPath, "*_metadata.txt")
 		matches, _ := filepath.Glob(metadataPattern)
 		if len(matches) > 0 {

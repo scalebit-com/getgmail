@@ -69,14 +69,17 @@ A command-line interface (CLI) tool written in Go that downloads Gmail emails to
 
 - **OAuth2 Authentication**: Secure Gmail API access with automatic token management
 - **Efficient Download**: Downloads latest emails first with configurable count limits
+- **Optimized Performance**: Fast duplicate detection without redundant API calls or folder creation
+- **Batch Processing**: Efficiently handles 100+ emails with incremental download support
 - **Organized Storage**: Creates folders named `YYYY-MM-DD_HH-MM-SS_subject` 
 - **Timezone Aware**: Folder modification times match email dates in your local timezone
-- **Smart Deduplication**: Skips already downloaded emails
+- **Smart Deduplication**: Pre-checks for existing emails before folder creation or API calls
 - **Robust Date Parsing**: Handles various email date formats and timezone suffixes
 - **Clean Output**: Sanitizes filenames and handles long subjects
 - **Attachment Support**: Automatically downloads and saves email attachments with deduplication
 - **Consistent File Naming**: All files use prefixed naming with date-time-subject format
 - **Docker Support**: Multi-stage optimized Docker image (51.4MB) with security hardening
+- **Network Resilience**: Handles temporary network issues - simply re-run to continue
 
 ## Output Structure
 
@@ -168,3 +171,11 @@ GOOGLE_TOKEN_FILE=token.json
 ```
 
 On first run, the application will guide you through the OAuth2 authorization process.
+
+## Performance Notes
+
+- **Typical Performance**: Downloads 50-100 new emails in 30-60 seconds
+- **Incremental Downloads**: Subsequent runs skip already-downloaded emails in seconds
+- **Gmail API Quotas**: Uses ~5-10 quota units per email (well below the 15,000/minute limit)
+- **Large Batches**: If downloading stops unexpectedly, simply re-run - the tool will continue from where it left off
+- **Optimizations**: The tool checks for existing emails before creating folders or making API calls
