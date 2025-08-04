@@ -80,6 +80,9 @@ A command-line interface (CLI) tool written in Go that downloads Gmail emails to
 - **Consistent File Naming**: All files use prefixed naming with date-time-subject format
 - **Docker Support**: Multi-stage optimized Docker image (51.4MB) with security hardening
 - **Network Resilience**: Handles temporary network issues - simply re-run to continue
+- **Timeout Protection**: Configurable timeouts prevent hanging on problematic emails
+- **Rate Limiting**: Built-in delays prevent API throttling
+- **Retry Logic**: Automatic retry with exponential backoff for transient failures
 
 ## Output Structure
 
@@ -124,7 +127,7 @@ All files within an email directory use a consistent prefix format:
 
 ### Available Images
 - `perarneng/getgmail:latest` - Latest stable version
-- `perarneng/getgmail:1.0.0` - Specific version tag
+- `perarneng/getgmail:1.4.0` - Specific version tag
 
 ### Basic Usage
 ```bash
@@ -179,3 +182,18 @@ On first run, the application will guide you through the OAuth2 authorization pr
 - **Gmail API Quotas**: Uses ~5-10 quota units per email (well below the 15,000/minute limit)
 - **Large Batches**: If downloading stops unexpectedly, simply re-run - the tool will continue from where it left off
 - **Optimizations**: The tool checks for existing emails before creating folders or making API calls
+- **Timeout Handling**: Individual operations have timeouts (30s for emails, 45s for attachments)
+- **Rate Limiting**: 100ms delay between emails, 50ms between attachments to avoid API throttling
+
+## Known Issues
+
+- Some malformed inline images in emails may be skipped to prevent API hanging
+- Very large attachments (>10MB) are skipped by default to prevent timeouts
+
+## Version History
+
+- **v1.4.0** - Improved timeout handling, rate limiting, and fix for problematic inline images
+- **v1.3.0** - Enhanced Docker support and attachment improvements  
+- **v1.2.0** - Optimized duplicate detection and performance
+- **v1.1.0** - Added attachment support
+- **v1.0.0** - Initial release

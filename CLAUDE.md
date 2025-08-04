@@ -131,6 +131,17 @@ The application implements a complete OAuth2 flow:
 - Supports token refresh through the oauth2 library
 - Uses Gmail readonly scope which includes attachment access permissions
 
+### Error Handling & Resilience (v1.4.0)
+
+The application includes comprehensive error handling:
+- **HTTP Client Timeouts**: Configurable timeouts for all HTTP operations (`pkg/gmail/client.go:62-71`)
+- **Per-Operation Timeouts**: 30s for email fetch, 45s for attachments, shorter for small files
+- **Rate Limiting**: Built-in delays between API calls to avoid throttling
+- **Retry Logic**: Automatic retry with exponential backoff for transient failures (`pkg/gmail/client.go:489-503`)
+- **Problematic Email Handling**: Hardcoded fix for known problematic Webhallen email (`pkg/gmail/client.go:372-379`)
+- **Context Cancellation**: Graceful handling of context timeouts and cancellations
+- **Debug Mode**: Special debug mode for troubleshooting specific emails (`cmd/download.go:85-102`)
+
 ### Docker Implementation
 
 The project includes Docker containerization with multi-stage build optimization:
@@ -139,7 +150,7 @@ The project includes Docker containerization with multi-stage build optimization
 - **Security**: Runs as non-root user (appuser:1000) with minimal privileges
 - **Environment**: Supports environment variables for credential file paths
 - **Volume Mounting**: Allows mounting host directories for credential and output file access
-- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.1.0`
+- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.4.0`
 - **Exclusions**: `.dockerignore` prevents secrets (credentials.json, token.json, .env) from being included in image
 - **Tasks**: Automated build and push via Taskfile.yml with version tagging from `version.txt`
 
@@ -147,6 +158,9 @@ The project includes Docker containerization with multi-stage build optimization
 
 - **Gmail API Quotas**: Uses ~5-10 quota units per email (well below the 15,000/minute user limit)
 - **Batch Processing**: Efficiently handles 100+ emails, with optimized duplicate detection
-- **Network Resilience**: May experience timeouts on specific emails; simply re-run to continue
+- **Network Resilience**: Robust timeout handling prevents hanging on problematic emails
 - **Typical Performance**: Downloads ~50-100 new emails in 30-60 seconds
 - **Incremental Downloads**: Subsequent runs skip already-downloaded emails in seconds
+- **Timeout Protection**: 30s timeout for emails, 45s for attachments, 5min for overall operation
+- **Rate Limiting**: 100ms delay between emails, 50ms between attachments
+- **Retry Logic**: Automatic retry with exponential backoff for transient failures

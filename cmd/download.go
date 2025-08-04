@@ -3,10 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
+	gmailv1 "google.golang.org/api/gmail/v1"
 
 	"github.com/perarneng/getgmail/pkg/gmail"
 	"github.com/perarneng/getgmail/pkg/logger"
@@ -54,7 +57,10 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	gmailClient := gmail.NewClient()
 	
 	log.Info("Connecting to Gmail API...")
-	ctx := context.Background()
+	// Create context with overall timeout for entire operation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	
 	if err := gmailClient.Connect(ctx); err != nil {
 		log.Error(fmt.Sprintf("Failed to connect to Gmail: %v", err))
 		return err
@@ -73,12 +79,49 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	log.Info(fmt.Sprintf("Found %d messages to process", len(messages)))
 
 	// Download each message
+	processedCount := 0
+	skippedCount := 0
+	failedCount := 0
+	
+	// Special debug mode for problematic email
+	debugEmailID := os.Getenv("DEBUG_EMAIL_ID")
+	if debugEmailID != "" {
+		log.Info(fmt.Sprintf("DEBUG MODE: Looking for email %s", debugEmailID))
+		var found bool
+		for _, msg := range messages {
+			if msg.Id == debugEmailID {
+				log.Info(fmt.Sprintf("Found target email %s, processing only this one", debugEmailID))
+				messages = []*gmailv1.Message{msg}
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Error(fmt.Sprintf("Email %s not found in first %d messages", debugEmailID, len(messages)))
+			return fmt.Errorf("target email not found")
+		}
+	}
+	
 	for i, msg := range messages {
+		// Add rate limiting delay between emails (except for first one)
+		if i > 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		
 		log.Info(fmt.Sprintf("Processing message %d/%d (ID: %s)", i+1, len(messages), msg.Id))
+
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			log.Error("Operation timeout or cancelled")
+			return ctx.Err()
+		default:
+		}
 
 		email, err := gmailClient.GetMessage(ctx, msg.Id)
 		if err != nil {
 			log.Error(fmt.Sprintf("Failed to get message %s: %v", msg.Id, err))
+			failedCount++
 			continue
 		}
 
@@ -92,16 +135,26 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		matches, _ := filepath.Glob(metadataPattern)
 		if len(matches) > 0 {
 			log.Info(fmt.Sprintf("Email %s already downloaded, skipping", msg.Id))
+			skippedCount++
 			continue
 		}
 
 		// Write email to disk
 		if err := writer.WriteEmail(ctx, email, outputDir); err != nil {
 			log.Error(fmt.Sprintf("Failed to write message %s: %v", msg.Id, err))
+			failedCount++
 			continue
 		}
+		processedCount++
 	}
 
-	log.Info(fmt.Sprintf("Download completed. Emails saved to: %s", outputDir))
+	log.Info(fmt.Sprintf("Download completed. Processed: %d, Skipped: %d, Failed: %d. Emails saved to: %s", 
+		processedCount, skippedCount, failedCount, outputDir))
+	
+	// Return error if all downloads failed
+	if processedCount == 0 && skippedCount == 0 && failedCount > 0 {
+		return fmt.Errorf("all email downloads failed")
+	}
+	
 	return nil
 }

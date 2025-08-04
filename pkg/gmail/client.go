@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
 	"github.com/perarneng/getgmail/pkg/interfaces"
@@ -59,6 +62,20 @@ func (c *Client) Connect(ctx context.Context) error {
 		c.saveToken(tokenFile, tok)
 	}
 
+	// Create HTTP client with timeouts
+	httpClient := &http.Client{
+		Timeout: 60 * time.Second, // Overall request timeout
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		},
+	}
+	
+	// Wrap the HTTP client with OAuth2
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 	client := config.Client(ctx, tok)
 	srv, err := gmail.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
@@ -151,9 +168,25 @@ func (c *Client) GetMessage(ctx context.Context, messageID string) (*interfaces.
 		return nil, fmt.Errorf("gmail service not connected")
 	}
 
-	msg, err := c.service.Users.Messages.Get(c.userID, messageID).Context(ctx).Do()
+	// Add timeout for individual message fetch
+	msgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	
+	msg, err := c.service.Users.Messages.Get(c.userID, messageID).Context(msgCtx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("unable to retrieve message %s: %v", messageID, err)
+		// Check if it's a retryable error
+		if c.isRetryableError(err) {
+			// Try once more with backoff
+			time.Sleep(2 * time.Second)
+			msgCtx2, cancel2 := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel2()
+			msg, err = c.service.Users.Messages.Get(c.userID, messageID).Context(msgCtx2).Do()
+			if err != nil {
+				return nil, fmt.Errorf("unable to retrieve message %s after retry: %v", messageID, err)
+			}
+		} else {
+			return nil, fmt.Errorf("unable to retrieve message %s: %v", messageID, err)
+		}
 	}
 
 	email := &interfaces.EmailMessage{
@@ -267,6 +300,7 @@ func (c *Client) wrapPlainTextAsHTML(plainText string) string {
 
 func (c *Client) extractAttachments(ctx context.Context, messageID string, payload *gmail.MessagePart) []interfaces.Attachment {
 	attachmentMap := make(map[string]interfaces.Attachment)
+	fmt.Printf("DEBUG: Starting attachment extraction for message %s\n", messageID)
 	c.extractAttachmentsRecursive(ctx, messageID, payload, attachmentMap)
 	
 	// Convert map to slice
@@ -275,6 +309,7 @@ func (c *Client) extractAttachments(ctx context.Context, messageID string, paylo
 		attachments = append(attachments, attachment)
 	}
 	
+	fmt.Printf("DEBUG: Found %d attachments for message %s\n", len(attachments), messageID)
 	return attachments
 }
 
@@ -297,6 +332,24 @@ func (c *Client) extractAttachmentsRecursive(ctx context.Context, messageID stri
 }
 
 func (c *Client) isAttachment(part *gmail.MessagePart) bool {
+	// Skip inline images if configured
+	skipInlineImages := os.Getenv("SKIP_INLINE_IMAGES") == "true"
+	
+	// Check for Content-ID (inline images in HTML emails)
+	for _, header := range part.Headers {
+		if strings.ToLower(header.Name) == "content-id" {
+			// This is likely an inline image
+			if part.Body != nil && part.Body.AttachmentId != "" && part.Body.Size > 0 {
+				fmt.Printf("DEBUG: Found inline image with Content-ID: %s, Size: %d\n", header.Value, part.Body.Size)
+				if skipInlineImages {
+					fmt.Printf("DEBUG: Skipping inline image due to SKIP_INLINE_IMAGES=true\n")
+					return false
+				}
+				return true
+			}
+		}
+	}
+	
 	// Check if this part has a filename in headers
 	for _, header := range part.Headers {
 		if strings.ToLower(header.Name) == "content-disposition" {
@@ -316,17 +369,72 @@ func (c *Client) processAttachment(ctx context.Context, messageID string, part *
 		return nil
 	}
 	
+	// HARDCODED FIX: Skip the problematic Webhallen email barcode attachment
+	// This specific inline image from message 19855d64da73b5be causes the Gmail API to hang indefinitely
+	// The attachment appears to be malformed with the base64 data missing from the email body
+	// Issue: The attachment ID is abnormally long (400+ chars) and the API cannot retrieve it
+	if messageID == "19855d64da73b5be" && strings.Contains(part.Body.AttachmentId, "ANGjdJ") {
+		fmt.Printf("WARNING: Skipping known problematic attachment in Webhallen email %s\n", messageID)
+		return nil
+	}
+	
 	// Get filename from headers
 	filename := c.getFilenameFromHeaders(part.Headers)
 	if filename == "" {
 		filename = fmt.Sprintf("attachment_%s", part.Body.AttachmentId)
 	}
 	
-	// Download attachment data
-	attachment, err := c.service.Users.Messages.Attachments.Get(c.userID, messageID, part.Body.AttachmentId).Context(ctx).Do()
-	if err != nil {
-		fmt.Printf("Error downloading attachment %s: %v\n", filename, err)
+	// Truncate attachment ID for logging (they can be extremely long)
+	attachIDForLog := part.Body.AttachmentId
+	if len(attachIDForLog) > 50 {
+		attachIDForLog = attachIDForLog[:50] + "..."
+	}
+	fmt.Printf("DEBUG: Processing attachment %s (ID: %s, Size: %d bytes) for message %s\n", 
+		filename, attachIDForLog, part.Body.Size, messageID)
+	
+	// Skip very large attachments that might cause timeouts
+	if part.Body.Size > 10*1024*1024 { // 10MB
+		fmt.Printf("WARNING: Skipping large attachment %s (%d bytes) for message %s\n", 
+			filename, part.Body.Size, messageID)
 		return nil
+	}
+	
+	// Skip attachments with suspiciously long IDs (likely corrupted)
+	if len(part.Body.AttachmentId) > 500 {
+		fmt.Printf("WARNING: Skipping attachment with extremely long ID (%d chars) for message %s\n", 
+			len(part.Body.AttachmentId), messageID)
+		return nil
+	}
+	
+	// Download attachment data with shorter timeout for small files
+	timeoutDuration := 45 * time.Second
+	if part.Body.Size < 1024 { // Less than 1KB
+		timeoutDuration = 10 * time.Second
+	}
+	attachCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+	
+	// Add small delay to avoid rate limiting
+	time.Sleep(50 * time.Millisecond)
+	
+	fmt.Printf("DEBUG: Downloading attachment %s for message %s (timeout: %v)...\n", filename, messageID, timeoutDuration)
+	attachment, err := c.service.Users.Messages.Attachments.Get(c.userID, messageID, part.Body.AttachmentId).Context(attachCtx).Do()
+	if err != nil {
+		// Retry once for transient errors
+		if c.isRetryableError(err) {
+			fmt.Printf("DEBUG: Retrying attachment download for %s...\n", filename)
+			time.Sleep(2 * time.Second)
+			attachCtx2, cancel2 := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel2()
+			attachment, err = c.service.Users.Messages.Attachments.Get(c.userID, messageID, part.Body.AttachmentId).Context(attachCtx2).Do()
+			if err != nil {
+				fmt.Printf("Error downloading attachment %s after retry: %v\n", filename, err)
+				return nil
+			}
+		} else {
+			fmt.Printf("Error downloading attachment %s: %v\n", filename, err)
+			return nil
+		}
 	}
 	
 	// Decode attachment data
@@ -363,4 +471,26 @@ func (c *Client) getFilenameFromHeaders(headers []*gmail.MessagePartHeader) stri
 		}
 	}
 	return ""
+}
+
+// isRetryableError checks if an error is retryable
+func (c *Client) isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	// Check for Google API errors
+	if apiErr, ok := err.(*googleapi.Error); ok {
+		// Retry on rate limit or server errors
+		return apiErr.Code == 429 || apiErr.Code >= 500
+	}
+	
+	// Check for timeout errors
+	if strings.Contains(err.Error(), "timeout") ||
+	   strings.Contains(err.Error(), "deadline exceeded") ||
+	   strings.Contains(err.Error(), "connection reset") {
+		return true
+	}
+	
+	return false
 }
