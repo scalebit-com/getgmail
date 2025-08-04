@@ -369,14 +369,10 @@ func (c *Client) processAttachment(ctx context.Context, messageID string, part *
 		return nil
 	}
 	
-	// HARDCODED FIX: Skip the problematic Webhallen email barcode attachment
-	// This specific inline image from message 19855d64da73b5be causes the Gmail API to hang indefinitely
-	// The attachment appears to be malformed with the base64 data missing from the email body
-	// Issue: The attachment ID is abnormally long (400+ chars) and the API cannot retrieve it
-	if messageID == "19855d64da73b5be" && strings.Contains(part.Body.AttachmentId, "ANGjdJ") {
-		fmt.Printf("WARNING: Skipping known problematic attachment in Webhallen email %s\n", messageID)
-		return nil
-	}
+	// GENERAL FIX: Skip attachments with abnormally long IDs
+	// These appear to be malformed attachments where Gmail API stores corrupted data
+	// The attachment ID becomes abnormally long (300+ chars) and the API cannot retrieve it
+	// This affects emails like the Webhallen barcode (19855d64da73b5be) and others
 	
 	// Get filename from headers
 	filename := c.getFilenameFromHeaders(part.Headers)
@@ -400,8 +396,9 @@ func (c *Client) processAttachment(ctx context.Context, messageID string, part *
 	}
 	
 	// Skip attachments with suspiciously long IDs (likely corrupted)
-	if len(part.Body.AttachmentId) > 500 {
-		fmt.Printf("WARNING: Skipping attachment with extremely long ID (%d chars) for message %s\n", 
+	// Normal Gmail attachment IDs are typically 50-150 chars, anything over 300 is suspicious
+	if len(part.Body.AttachmentId) > 300 {
+		fmt.Printf("WARNING: Skipping attachment with extremely long ID (%d chars) for message %s - likely corrupted\n", 
 			len(part.Body.AttachmentId), messageID)
 		return nil
 	}

@@ -127,7 +127,7 @@ All files within an email directory use a consistent prefix format:
 
 ### Available Images
 - `perarneng/getgmail:latest` - Latest stable version
-- `perarneng/getgmail:1.4.0` - Specific version tag
+- `perarneng/getgmail:1.5.0` - Specific version tag
 
 ### Basic Usage
 ```bash
@@ -187,11 +187,21 @@ On first run, the application will guide you through the OAuth2 authorization pr
 
 ## Known Issues
 
-- Some malformed inline images in emails may be skipped to prevent API hanging
+### Gmail API Server-Side Corruption
+Some emails contain corrupted attachment metadata stored in Gmail's servers, where attachment IDs become abnormally long (300+ characters). This appears to be a Gmail API server-side issue where:
+
+- Gmail's email parsing/storage system corrupts certain attachment references
+- The Gmail API returns these malformed attachment IDs in message metadata
+- When attempting to download these attachments, Gmail's servers hang indefinitely
+
+**Our Solution**: We automatically detect and skip attachments with suspiciously long IDs (>300 characters) to prevent hanging. This affects a very small number of emails but ensures reliable operation.
+
+**Other Limitations**:
 - Very large attachments (>10MB) are skipped by default to prevent timeouts
 
 ## Version History
 
+- **v1.5.0** - Improved general fix for Gmail API corrupted attachment metadata (any email with long attachment IDs)
 - **v1.4.0** - Improved timeout handling, rate limiting, and fix for problematic inline images
 - **v1.3.0** - Enhanced Docker support and attachment improvements  
 - **v1.2.0** - Optimized duplicate detection and performance

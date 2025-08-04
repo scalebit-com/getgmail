@@ -131,16 +131,26 @@ The application implements a complete OAuth2 flow:
 - Supports token refresh through the oauth2 library
 - Uses Gmail readonly scope which includes attachment access permissions
 
-### Error Handling & Resilience (v1.4.0)
+### Error Handling & Resilience (v1.5.0)
 
 The application includes comprehensive error handling:
 - **HTTP Client Timeouts**: Configurable timeouts for all HTTP operations (`pkg/gmail/client.go:62-71`)
 - **Per-Operation Timeouts**: 30s for email fetch, 45s for attachments, shorter for small files
 - **Rate Limiting**: Built-in delays between API calls to avoid throttling
 - **Retry Logic**: Automatic retry with exponential backoff for transient failures (`pkg/gmail/client.go:489-503`)
-- **Problematic Email Handling**: Hardcoded fix for known problematic Webhallen email (`pkg/gmail/client.go:372-379`)
+- **Corrupted Attachment Handling**: General fix for Gmail API server-side corruption - skips attachments with abnormally long IDs (>300 chars) (`pkg/gmail/client.go:404-408`)
 - **Context Cancellation**: Graceful handling of context timeouts and cancellations
 - **Debug Mode**: Special debug mode for troubleshooting specific emails (`cmd/download.go:85-102`)
+
+### Gmail API Server-Side Issues
+
+Some emails contain corrupted attachment metadata in Gmail's servers:
+- **Root Cause**: Gmail's email parsing/storage system occasionally corrupts attachment references
+- **Symptoms**: Attachment IDs become abnormally long (300-400+ characters instead of typical 50-150)
+- **API Behavior**: Gmail API returns corrupted IDs in metadata but hangs when trying to retrieve them
+- **Affected Emails**: Examples include IDs `19855d64da73b5be` (Webhallen receipt) and `1980c876dabd2099` (Ludvig invoice)
+- **Our Solution**: Automatically detect and skip such attachments to prevent hanging (threshold: >300 chars)
+- **Impact**: Affects a very small percentage of emails but ensures reliable operation
 
 ### Docker Implementation
 
@@ -150,7 +160,7 @@ The project includes Docker containerization with multi-stage build optimization
 - **Security**: Runs as non-root user (appuser:1000) with minimal privileges
 - **Environment**: Supports environment variables for credential file paths
 - **Volume Mounting**: Allows mounting host directories for credential and output file access
-- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.4.0`
+- **Registry**: Published to Docker Hub as `perarneng/getgmail:latest` and `perarneng/getgmail:1.5.0`
 - **Exclusions**: `.dockerignore` prevents secrets (credentials.json, token.json, .env) from being included in image
 - **Tasks**: Automated build and push via Taskfile.yml with version tagging from `version.txt`
 
